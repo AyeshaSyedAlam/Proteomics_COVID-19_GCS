@@ -167,14 +167,6 @@ severity_labels <- c("Asymptomatic", "Mild", "Moderate", "Severe")
 ##     with plot_save().
 ## -----------------------------------------------------------------------
 
-#/¯\___/¯\___/¯\____/¯\____/¯\__E__/¯\_____/¯\_____/¯\____/¯\____/¯\___/¯\___/¯\_
-#_/¯\___/¯\___/¯\____/¯\____/¯\__L__/¯\_____/¯\_____/¯\____/¯\____/¯\___/¯\___/¯\_
-#__/¯\___/¯\___/¯\____/¯\____/¯\__A__/¯\__N__/¯\_____/¯\____/¯\____/¯\___/¯\___/¯\_
-#___/¯\___/¯\___/¯\____/¯\____/¯\__S__/¯\__E__/¯\__1__/¯\____/¯\____/¯\___/¯\___/¯\_
-#\___/¯\___/¯\___/¯\____/¯\____/¯\__T__/¯\__T__/¯\_____/¯\____/¯\____/¯\___/¯\___/¯\_
-#¯\___/¯\___/¯\___/¯\____/¯\____/¯\__I__/¯\_____/¯\_____/¯\____/¯\____/¯\___/¯\___/¯\_
-#/¯\___/¯\___/¯\___/¯\____/¯\____/¯\__C__/¯\_____/¯\_____/¯\____/¯\____/¯\___/¯\___/¯\_
-
 
 E_Net1 <- function(v_dep,
 n_dep = NULL,
@@ -194,45 +186,24 @@ parallel = NULL,
 seed = 4815, 
 maxit = 10^6){
   
-# Description
-# v_ = variable name in data frame
-# n_ = variable label we like to see in the output
-# dep = dependent variable
-# adj = adjustment variables
-# pen = penalized variables (pool of variables we want to select the most important ones)
-# dat = dataframe
-# round = where to round the digits in the final table
-# seed = sets the seed individually, i.e. if you want to compare different 10-fold CV 
-#        outcomes to see, if there are stable and LOOCV can be omitted. 
-
-# Features:
-# - Performes elastic net with alpha (0.5 = 'typical elastic net', 1 = LASSO, 0 = RIDGE) as mixing parameter.
-# - All adjustment and penalized variables are scaled and centered within the function
-#   before the glm function is applied (like in Andreas function LASSO_FP4)
-# - Calculates a robustness for each LR (= % of models between the model of first appearance of the 
-#   corresponding variable and the model with the optimal lambda, where the variable is not 0)
-# - Crossvalidation can be parallelized by setting the 'parallel' parameter to the wanted number of 
-#   cores that should be used. 
-
-
-# Ranking of the table ['What is the lambda ratio?']: 
-# 
-# Lambda is the weight for the additional penalty term and can therefore takes values from
-# 0 = no penalty (i.e. this equals the 'regular' regression model) to (theoretically)
-# infinity = maximum penalty (i.e. all coefficients are 0 and we call this the 'null model').
-# [Note: There are applications with negative values for Lambda, but we ignore this here - see further:
-# https://stats.stackexchange.com/questions/331264/understanding-negative-ridge-regression
-# if I have time, I will try to dig a bit into this :)]
-#   The function starts with the lowest lambda value for the null model and then slowly decreases lambda to
-# eventually 0. On this way, the model gets more and more non-zero coefficents, i.e. the model includes with
-# decreasing lambda an increasing amount of (the penalized) variables. 
-# The 'optimal' lambda is then defined as the value that minimizes the loss (e.g. mean-sqaure error in the linear regression).
-#   Now, we can determine for each variable the highest lambda, that this variable is in the model and then 
-# devide it by the optimal lambda (-> this is the lambda ratio and its lowest possible value is 1).
-# This can be used for a ranking of the penalized variables: 
-#   If variable A has a higher lambda ratio than another variable B we can interpret this that A was included to 
-#   the model befor B. 
-
+# Arguments
+#   v_dep, t_dep   outcome; t_dep is the survival time for family = 'cox'
+#   v_adj, n_adj   adjustment variables (left unpenalised) and their labels
+#   v_pen, n_pen   penalised variables and their labels
+#   dat            data frame
+#   family         'binomial', 'gaussian', 'poisson' or 'cox'
+#   alpha          0 = ridge, 1 = lasso, 0.5 = elastic net
+#   nfolds, loocv  cross-validation folds; loocv = TRUE sets nfolds = n
+#   parallel       number of cores used for the cross-validation
+#   seed           seed for the fold assignment
+#
+# Adjustment and penalised variables are scaled and centred inside the
+# function. Two columns of the output table need definitions:
+#   Lambda Ratio   the largest penalty at which a variable is still in the
+#                  model, divided by the selected penalty; a higher value
+#                  means the variable entered the model earlier
+#   Robustness     the share of models between that point and the selected
+#                  penalty in which the variable stays non-zero
 
   require(glmnet)
   require(pROC)
@@ -279,7 +250,6 @@ maxit = 10^6){
     dat <- dat[which(dat[,t_dep] > 0), c(v_dep, t_dep, v_adj, v_pen)]
     
     for (i in 1:ncol(dat)) {
-      # if((i > 2) & (i <= (length(v_adj)+2)) & (class(dat[,i]) == 'numeric')) dat[,i] <- dat[,i]/sd(dat[,i])
       if(class(dat[,i]) == 'factor') dat[,i] <- as.numeric(dat[,i])-1
     }
     
@@ -328,7 +298,6 @@ maxit = 10^6){
   
   set.seed(seed)
   
-#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   ### Set criterium what lambda should minimize 
 
   family <- tolower(family)
@@ -361,9 +330,7 @@ maxit = 10^6){
   
   lambda         <- crossval[[lambda_eval]] #optimal lambda, minimal shrinkage
   fit            <- glmnet(BigX, y=y, alpha = alpha, nlambda = 1000, family=family, standardize = F, penalty.factor=pen_ration, maxit = maxit)
-  #fit2           <- glmnet(BigX, y=y, alpha = alpha, nlambda = 5000,   family=family, lambda.min.ratio = 0.00000001, standardize = F, penalty.factor=pen_ration)
   pred_0         <- predict(fit,  newx=BigX, s=lambda,  type="response")
-  #print(coef(fit, s=lambda))
   if(sum(abs(coef(fit, s=lambda))[-1]>0)==0){
     return(F)
     stop('Nothing was selected.')
@@ -371,10 +338,9 @@ maxit = 10^6){
   if(family=="cox") {
     library(foreach)
     events <- sum(y[,2])
-    # normal (overoptimistic) C-index
+    # apparent C-index, before cross-validation
     pred0 <- predict(fit, newx=BigX, s = lambda, type="response")
     AUC_0 <- as.numeric(as.vector((rcorr.cens(-pred0[,1],Surv(y[,1],y[,2]))[1])))
-    # AUC_1 <- as.numeric(as.vector((rcorr.cens(-as.vector(crossval$fit.preval[,atds]),Surv(y[,1],y[,2]))[1])))
     
     # Cross-validation based C-index
     predCV <- rep(NA,nrow(BigX))
@@ -390,7 +356,6 @@ maxit = 10^6){
       }
     } else {
       if(!is.null(parallel)) {
-        # start <- Sys.time()
         detect <- parallel::detectCores()
         # At least 2 cores should not be used for the parallelization
         if(parallel > detect-2) parallel <- detect - 2
@@ -400,8 +365,6 @@ maxit = 10^6){
           predict(temp, newx=BigX[i,], s=lambda, type="response")
         }
         stopImplicitCluster()
-        # end <- Sys.time()
-        # end-start
         predCV <- preds
       } else {
         folds <- 1:nfolds
@@ -443,25 +406,19 @@ maxit = 10^6){
     cat(paste0('Simple pseudo R^2: ', round(AUC_0, 4), '; CV pseudo R^2: ', round(AUC_cv, 4), '\n'))
   }
   if(family!="cox"){
-    # vlabels        <- c('Intercept^1', vlabels)
     slabels        <- c('Intercept',   slabels)
-    # plabels        <- c('^1',          plabels)
     signs          <- sign(coef(fit, s=lambda))
     signs_txt      <- rep('', length(signs))
   }
   if(family=="cox"){
-    # vlabels        <- vlabels[which(vlabels!='^1')]
     slabels        <- c(slabels)
-    # plabels        <- c(plabels)
     signs  <- sign(coef(fit, s=lambda))
     signs_txt <- rep(length(signs))
   }
   signs_txt[which(signs==-1)] <- '-'
   signs_txt[which(signs==0)]  <- ''
   signs_txt[which(signs==1)]  <- '+'
-  #########################################
   
-  #########################################
   # Ranking
   LAM <- matrix(fit$lambda, nrow(fit$beta), ncol(fit$beta), byrow=T) # Row = Variables, Column = Lambdas
   LAM[which(fit$beta==0, arr.ind=F)] <- 0 # set Lambdas with beta coefficients 0 to 0 
@@ -483,17 +440,14 @@ maxit = 10^6){
   }
 
   
-  #coefs2 <- coef(fit, s=fit$lambda[s.lambda], exact = T)
   coefs <- coef(fit, s=lambda)
   
   # There is no intercept in the Cox model as it is built into the baseline hazard
-  # See: https://glmnet.stanford.edu/articles/Coxnet.html
   if(family!="cox") {
     ranks <- c(NA, ranks)
     trust <- c(0, trust)
   }
   
-  #print(paste0('min lambda=', round(lambda,5)))
   sids <- which(abs(coefs)>0)
   M <- cbind(slabels[sids], signs_txt[sids], ranks[sids], trust[sids], coefs[sids])
   if(dim(M)[1]>1){
@@ -517,16 +471,12 @@ maxit = 10^6){
     colnames(M) <- c('Variable', 'Direction','Lambda Ratio', 'Coefficient', coef_name)
     M2 <- M
   }
-  #########################################
   
   selected <- M[which(M[,3]!='--'),1]
   
   cat(paste0('Selected ', length(selected), ' / ', sum(pen_ration), ' penalized variables.\n'))
   return(list(M, fit, ranks, AUC_0, AUC_cv, selected, slabels, signs_txt, M2, lambda, BigX, pen_ration, crossval, nrow(BigX), events, y, family, alpha, nfolds, loocv, n_dep, n_adj))
 }
-
-
-# results <- E_Net1('bmi', NULL, c('sex', 'age'), c('Sex', 'Age'), vars_prot, nams_prot, d, family = 'gaussian')
 
 
 plot_enet <- function(results, plot_name, se = F, xlim = NULL, ylim = NULL, zoom = F){
@@ -537,14 +487,8 @@ plot_enet <- function(results, plot_name, se = F, xlim = NULL, ylim = NULL, zoom
   
   M              <- results[[1]]
   fit            <- results[[2]]
-  # AUC_0          <- results[[4]]
-  # AUC_cv         <- results[[5]]
   lambda         <- results[[10]]
-  # BigX           <- results[[11]]
-  # pen_ration     <- results[[12]]
   crossval <- cvobj <- results[[13]]
-  # N              <- results[[14]]
-  # events         <- results[[15]]
   family         <- results[[17]]
   
   lambda_se <- crossval$lambda.1se
@@ -1361,7 +1305,7 @@ set.thread.count(2)
 
 dat_cov_all$asym_smod_and_hard <- NA
 dat_cov_all$asym_smod_and_hard[which(dat_cov_all$Severity.of.acute.infection == "asymptomatisch")] <- "yes"
-# dat_cov_all$asym_smod_and_hard[which(dat_cov_all$Severity.of.acute.infection == 'milder Verlauf')] <- 'no'
+## mild infections are left as NA and are therefore excluded from this contrast
 dat_cov_all$asym_smod_and_hard[which(dat_cov_all$Severity.of.acute.infection == "maessiger Verlauf")] <- "no"
 dat_cov_all$asym_smod_and_hard[which(dat_cov_all$Severity.of.acute.infection == "schwerer Verlauf")]  <- "no"
 dat_cov_all$asym_smod_and_hard <- 2 - as.numeric(as.factor(dat_cov_all$asym_smod_and_hard))
